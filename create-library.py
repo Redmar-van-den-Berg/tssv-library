@@ -3,31 +3,30 @@
 import argparse
 
 from cyvcf2 import VCF
-from Bio import SeqIO
+from pysam import FastaFile
 
-def create_library(name, chrom, begin, end=None, flank_size=20):
+def create_library(name, record, chrom, begin, end=None, flank_size=20):
     """ Create a library line 
 
-    chrom should be a Biopython Seq object of the relevant chromosome
+    record should be a pysam FastaFile
 
     """
     if not end:
         end = begin + 1
 
-    left_marker = chrom[begin - flank_size:begin].seq
-    right_marker = chrom[end : end+flank_size].seq
-    expected_allele = chrom[begin:end].seq
+    left_marker = record.fetch(reference=chrom, start=begin-flank_size, end=begin)
+    right_marker = record.fetch(reference=chrom, start=end, end=end+flank_size)
+    expected_allele = record.fetch(reference=chrom, start=begin, end=end)
 
     return f'{name}\t{left_marker}\t{right_marker}\t{expected_allele} 1 1'
 
 def main(args):
     # Read the reference fasta (requires biopython >=1.52
-    record_dict = SeqIO.index(args.reference, 'fasta')
+    record = FastaFile(args.reference)
 
     # Open the VCF
     for variant in VCF(args.vcf):
         name = f'{variant.CHROM}:{variant.POS}'
-        chrom = record_dict[variant.CHROM]
         # Get the size of the event
         size = max (len(x) for x in [variant.REF]+variant.ALT)
         # Skip if the event is too large
@@ -36,7 +35,7 @@ def main(args):
         # VCF's are 1-based
         begin = variant.POS - 1
         end = begin + size
-        lib = create_library(name, chrom, begin, end, args.flank_size)
+        lib = create_library(name, record, variant.CHROM, begin, end, args.flank_size)
         print(lib)
 
 
